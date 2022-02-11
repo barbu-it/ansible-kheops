@@ -123,6 +123,26 @@ DOCUMENTATION_OPTION_FRAGMENT = '''
           - A list of keys to lookup
         default: Null
       
+
+      # Behavior configuration
+      # ==========================
+      process_scope:
+        description:
+          - This setting defines how is parsed the `scope` configuration
+          - Set `vars` to enable simple variable interpolation
+          - Set `jinja` to enable jinja string interpolation
+        default: 'jinja'
+        choices: ['vars', 'jinja']
+
+      process_results:
+        description:
+          - This setting defines how is parsed the returned results.
+          - Set `none` to disable jinja interpolation from result.
+          - Set `jinja` to enable jinja result interpolation.
+          - Using jinja may pose some security issues, as you need to be sure that your source of data is properly secured.
+        default: 'none'
+        choices: ['none', 'jinja']
+      
       
       # Uneeded # Misc
       # Uneeded version:
@@ -163,6 +183,7 @@ from kheops.app import Kheops
 from ansible.errors import AnsibleError
 from ansible.module_utils.common.text.converters import to_native
 from ansible.template import generate_ansible_template_vars, AnsibleEnvironment, USE_JINJA2_NATIVE
+from ansible.utils.display import Display
 
 from pprint import pprint
 
@@ -190,14 +211,13 @@ class AnsibleKheops():
     def __init__(self, configs=None, display=None):
 
         self.configs = configs or []
-        self.display = display or print
+        self.display = display or Display()
 
         config = self.get_config()
         # print ("CURRENT CONFIG vv")
         # pprint (config)
         # print ("CURRENT CONFIG ^^")
 
-        self.init_templar()
 
         # Instanciate Kheops
         if config["mode"] == 'instance':
@@ -224,7 +244,7 @@ class AnsibleKheops():
             raise AnsibleError("Kheops client mode is not implemented")
 
         self.config = config
-        print ("Kheops instance is OK")
+        self.display.v(f"Kheops instance has been created")
 
 
     def get_config(self):
@@ -278,7 +298,7 @@ class AnsibleKheops():
         combined_config.update(env_config)
         combined_config.update(merged_configs)
         
-
+        # Debug report
         # out = {
         #     "0_default": default_config,
         #     "1_env": env_config,
@@ -289,7 +309,6 @@ class AnsibleKheops():
         # print ('=' * 20)
         # pprint (combined_config)
         # print ('=' * 20)
-
 
         return combined_config
 
@@ -359,12 +378,9 @@ class AnsibleKheops():
 
         return ret
 
-    def init_templar(self, enable_jinja=True, jinja2_native=False):
-        pass
 
     def get_scope_from_jinja(self, host_vars, templar, scope=None, jinja2_native=False):
         scope = scope or self.config['scope']
-        ret = {}
 
         if USE_JINJA2_NATIVE and not jinja2_native:
             _templar = templar.copy_with_new_env(environment_class=AnsibleEnvironment)
@@ -372,15 +388,25 @@ class AnsibleKheops():
             _templar = templar
 
         _vars = deepcopy(host_vars)
+        ret = {}
         with _templar.set_temporary_context(available_variables=_vars):
-            res = _templar.template(scope, preserve_trailing_newlines=True,
-                    convert_data=False, escape_backslashes=False)
-            if USE_JINJA2_NATIVE and not jinja2_native:
-                 # jinja2_native is true globally but off for the lookup, we need this text
-                 # not to be processed by literal_eval anywhere in Ansible
-                 res = NativeJinjaText(res)
 
-        return res
+            for key, value in scope.items():
+                res = value
+                try:
+                    res = _templar.template(value, preserve_trailing_newlines=True,
+                            convert_data=True, escape_backslashes=False)
+                    if USE_JINJA2_NATIVE and not jinja2_native:
+                         # jinja2_native is true globally but off for the lookup, we need this text
+                         # not to be processed by literal_eval anywhere in Ansible
+                         res = NativeJinjaText(res)
+                    self.display.vvv(f"Transformed: {value} =====> {res}")
+                except Exception as err:
+                    self.display.v(f"Got templating error for value: {value} => {err}")
+
+                ret[key] = res
+
+        return ret
 
 
 
@@ -392,33 +418,43 @@ class AnsibleKheops():
         keys_config = self.parse_keys(keys, namespace)
         keys = [ i.show() for i in keys_config ]
 
-        # self.base.display.v(f"Kheops keys: {keys}")
-        # self.base.display.vv(f"Kheops scope: {scope}")
+        self.display.v(f"Kheops keys: {keys}")
+        self.display.vv(f"Kheops scope: {scope}")
 
-
-        print ("LOOKUP QUERY: ", keys, scope)
-        #try:
         ret = self.kheops.lookup(
                 keys=keys,
                 scope=scope,
                 #trace=True,
                 #explain=True,
             )
-        #except Exception as err:
-        #    assert False, f"{err.__traceback__}"
-        #    assert False, f"{dir(err)}"
-        #    raise AnsibleError('Something happened, this was original exception: %s' % to_native(err))
-        #    assert False, f"MY ERRRROR {err}"
 
-        #    self.display.v(err)
-
-        print ("RESULT: ", ret)
         # Remap output
-        #for key in keys_config:
-        #    if key.remap != key.key:
-        #        ret[key.remap] = ret[key.key]
-        #        del ret[key.key]
+        for key in keys_config:
+            if key.remap != key.key:
+                ret[key.remap] = ret[key.key]
+                del ret[key.key]
 
         return ret or {}
+
+
+    def super_lookup(self, keys, namespace=None, scope=None, kwargs=None,
+            _templar=None,
+            _variables=None,
+            _process_scope=None,
+            _process_results=None,
+            ):
+
+        _process_scope = _process_scope or self.config['process_scope']
+        _process_results = _process_results or self.config['process_results']
+
+        if _process_scope == 'vars':
+            scope = self.get_scope_from_host_inventory(_variables, scope=scope)
+        elif _process_scope == 'jinja':
+            assert _templar, f"BUG: We expected a templar object here, got: {_templar}"
+            scope = self.get_scope_from_jinja(_variables, _templar, scope=scope)
+        
+        ret = self.lookup(keys, namespace=namespace, scope=scope)
+
+        return ret
 
 

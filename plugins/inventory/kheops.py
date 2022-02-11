@@ -85,48 +85,58 @@ class InventoryModule(BaseInventoryPlugin, Cacheable, Constructable):
         config_data = self._read_config_data(path)
         #self._consume_options(config_data)
 
+        # Get options from inventory
         self.strict = self.get_option('strict')
-
         self.compose = self.get_option('compose')
         self.groups = self.get_option('groups')
         self.keyed_groups = self.get_option('keyed_groups')
 
+        # self.process_scope = self.get_option('process_scope')
+        # self.process_results = self.get_option('process_results')
         
+        # Prepare Kheops instance
         self.config_file = self.get_option('config')
-
         configs = [
           self.config_file,
           path,
           ]
         kheops = AnsibleKheops(configs=configs, display=self.display)
 
-        # Loop over each keys
+        # Loop over each hosts
         for host_name in inventory.hosts:
           host = self.inventory.get_host(host_name)
 
-          scope = kheops.get_scope_from_host_inventory(host.get_vars(), scope=None)
-
-          # Fetch the results
-          ret = kheops.lookup(
+          ret = kheops.super_lookup(
               keys=None,
-              scope=scope,
+              scope=None,
+              _templar=self.templar,
+              _variables=host.get_vars(),
               #trace=True,
               #explain=True,
           )
 
+          # # Create the scope
+          # if self.process_scope == 'vars':
+          #     scope = kheops.get_scope_from_host_inventory(host.get_vars(), scope=None)
+          # elif self.process_scope == 'jinja':
+          #     scope = kheops.get_scope_from_jinja(host.get_vars(), self.templar, scope=None)
+
+          # # Fetch the results
+          # ret = kheops.lookup(
+          #     keys=None,
+          #     scope=scope,
+          #     #trace=True,
+          #     #explain=True,
+          # )
+
           # Inject variables into host
           for key, value in ret.items():
-              self.display.vv (f"Set {host_name} var: {key}={value}")
-              host.set_variable(key, value)
+
+                self.display.vv (f"Define variable for {host_name}: {key}={value}")
+                host.set_variable(key, value)
 
           # Call constructed inventory plugin methods
-          #hostvars = self.inventory.get_host(host_name).get_vars()
           hostvars = host.get_vars()
-
-          #tutu = hostvars.get('tiger_profiles', "MISSSSINGGGG")
-          #print ("YOOOOO", tutu, self.keyed_groups, host_name, self.strict)
-
-
           self._set_composite_vars(self.compose, hostvars, host_name, self.strict)
           self._add_host_to_composed_groups(self.groups, hostvars, host_name, self.strict)
           self._add_host_to_keyed_groups(self.keyed_groups, hostvars, host_name, self.strict)

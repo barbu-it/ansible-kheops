@@ -109,30 +109,29 @@ from pprint import pprint
 class LookupModule(LookupBase):
     def run(self, terms, variables=None, scope=None, **kwargs):
 
-
         self.set_options(direct=kwargs)
-        #self.config_file = self.get_option('config')
 
+        self.process_scope = self.get_option('process_scope')
+        self.process_results = self.get_option('process_results')
+
+        # Prepare Kheops instance
         self.config_file = self.get_option('config')
-
         configs = [
           self.config_file,
-#          {
-#              "instance_log_level": 'DEBUG',
-#              }
+          kwargs,
+          #{
+          #    "instance_log_level": 'DEBUG',
+          #    }
           ]
         kheops = AnsibleKheops(configs=configs, display=self._display)
 
-        
-        scope = kheops.get_scope_from_host_inventory(variables, scope=None)
-        scope = kheops.get_scope_from_jinja(variables, self._templar, scope=None)
+        # Create scope
+        if self.process_scope == 'vars':
+            scope = kheops.get_scope_from_host_inventory(variables, scope=None)
+        elif self.process_scope == 'jinja':
+            scope = kheops.get_scope_from_jinja(variables, self._templar, scope=None)
 
-        #assert False , f"OUTOUT: {scope2}"
-
-
-        #for key, value in self.get_option('scope').items():
-        #    scope[key] = variables[value]
-
+        # Transform dict to list for lookup/queries
         ret = []
         for term in terms:
             result = kheops.lookup(
@@ -144,17 +143,6 @@ class LookupModule(LookupBase):
         return ret
 
 
-
-
-
-        # if isinstance(terms, str):
-        #     terms = terms.split(',')
-
-        # import ansible_collections.barbu_it.ansible_kheops.plugins.plugin_utils.common as kheops_utils
-        # AnsibleKheops = kheops_utils.AnsibleKheops
-        # kheops = AnsibleKheops()
-
-        # return None
 
         # assert isinstance(terms, list), f"Expected a list, got: {terms}"
 
