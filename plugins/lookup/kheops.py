@@ -50,7 +50,7 @@ DOCUMENTATION = """
       _terms:
         description: One or more string terms prefixed by a namespace. Format is `<namespace>/<key>`.
         required: True
-  
+
       enable_jinja:
         description:
             - Enable or not Jinja rendering
@@ -67,10 +67,12 @@ DOCUMENTATION = """
         default: False
         version_added: '2.11'
         type: bool
+        env:
+            - name: ANSIBLE_JINJA2_NATIVE
         notes:
           - Kheops documentation is available on http://kheops.io/
           - You can add more parameters as documented in http://kheops.io/server/api
-  
+
 """ + DOCUMENTATION_OPTION_FRAGMENT
 
 EXAMPLES = """
@@ -114,6 +116,18 @@ class LookupModule(LookupBase):
         self.process_scope = self.get_option('process_scope')
         self.process_results = self.get_option('process_results')
 
+        enable_jinja = kwargs.pop('enable_jinja', self.get_option('enable_jinja'))
+        jinja2_native = kwargs.pop('jinja2_native', self.get_option('jinja2_native'))
+
+
+        # Start jinja template engine
+        if enable_jinja:
+            if USE_JINJA2_NATIVE and not jinja2_native:
+                templar = self._templar.copy_with_new_env(environment_class=AnsibleEnvironment)
+            else:
+                templar = self._templar
+
+
         # Prepare Kheops instance
         self.config_file = self.get_option('config')
         configs = [
@@ -138,72 +152,19 @@ class LookupModule(LookupBase):
                   keys=term,
                   scope=scope,
               )
+
+            # Render data with Templar
+            with templar.set_temporary_context(available_variables=variables):
+                result = templar.template(result,
+                            preserve_trailing_newlines=True,
+                            convert_data=False, escape_backslashes=False)
+
+            if USE_JINJA2_NATIVE and not jinja2_native:
+                # jinja2_native is true globally but off for the lookup, we need this text
+                # not to be processed by literal_eval anywhere in Ansible
+                result = NativeJinjaText(result)
+
             ret.append(result)
 
         return ret
-
-
-
-        # assert isinstance(terms, list), f"Expected a list, got: {terms}"
-
-        # # Parse arguments
-        # kwargs = kwargs or {}
-        # #enable_jinja = kwargs.pop('enable_jinja', True)
-        # #jinja2_native = kwargs.pop('jinja2_native', False)
-
-        # #enable_jinja = kwargs.pop('enable_jinja', True)
-        # #jinja2_native = kwargs.pop('jinja2_native', False)
-
-        # self.namespace = self.get_option('query_namespace')
-        # self.configuration = self.get_option('configuration')
-
-        # # Instanciate Kheops client
-        # kheops = Kheops(config=self.configuration, namespace=self.namespace)
-
-        # for term in terms:
-        #     print ("Lookup for key: ", term)
-        
-
-        # print ("WIIIIIIIIPPPPPPPPPPPPPPPPP")
-
-        # # Start jinja template engine
-        # if enable_jinja:
-        #     if USE_JINJA2_NATIVE and not jinja2_native:
-        #         templar = self._templar.copy_with_new_env(environment_class=AnsibleEnvironment)
-        #     else:
-        #         templar = self._templar
-
-        # # Look for each terms
-        # ret = []
-        # for term in terms:
-        #     lookuppath = term.split('/')
-        #     key = lookuppath.pop()
-        #     namespace = lookuppath
-
-        #     if not namespace:
-        #         raise AnsibleError("No namespace given for lookup of key %s" % key)
-
-        #     response = kheops.lookup(key=key, namespace=namespace, variables=variables, kwargs=kwargs)
-
-        #     # Render data with Jinja
-        #     if enable_jinja:
-        #         # Build a copy of environment vars
-        #         vars = deepcopy(variables)
-
-        #         # Render data with Templar
-        #         with templar.set_temporary_context(available_variables=vars):
-        #             res = templar.template(response['payload'], preserve_trailing_newlines=True,
-        #                                        convert_data=False, escape_backslashes=False)
-
-        #         if USE_JINJA2_NATIVE and not jinja2_native:
-        #             # jinja2_native is true globally but off for the lookup, we need this text
-        #             # not to be processed by literal_eval anywhere in Ansible
-        #             res = NativeJinjaText(res)
-        #     else:
-        #         res = response['payload']
-
-        #     # Append response to response array
-        #     ret.append(res)
-
-        # return ret
 
