@@ -432,7 +432,7 @@ class AnsibleKheops():
 
         # Remap output
         for key in keys_config:
-            if key.remap != key.key:
+            if key.remap is not None and key.remap != key.key:
                 ret[key.remap] = ret[key.key]
                 del ret[key.key]
 
