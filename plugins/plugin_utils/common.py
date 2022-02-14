@@ -187,7 +187,7 @@ from ansible.utils.display import Display
 
 from pprint import pprint
 
-KEY_NS_SEP = '/'
+KEY_NS_SEP = ':'
 if USE_JINJA2_NATIVE:
     from ansible.utils.native_jinja import NativeJinjaText
 
@@ -322,8 +322,10 @@ class AnsibleKheops():
 
         if isinstance(item, str):
 
-            parts = item.split('/', 3)
-            #print (len(parts))
+            parts = item.split(KEY_NS_SEP, 3)
+            if not parts:
+                # Temporary Jerakia compat
+                parts = item.split('/', 3)
 
             if len(parts) > 0:
                 key = parts[0]
