@@ -323,10 +323,6 @@ class AnsibleKheops():
         if isinstance(item, str):
 
             parts = item.split(KEY_NS_SEP, 3)
-            if not parts:
-                # Temporary Jerakia compat
-                parts = item.split('/', 3)
-
             if len(parts) > 0:
                 key = parts[0]
             if len(parts) > 1:
