@@ -55,7 +55,6 @@ DOCUMENTATION = """
         description:
             - Enable or not Jinja rendering
         default: True
-        version_added: '2.11'
         type: bool
       jinja2_native:
         description:
@@ -65,7 +64,6 @@ DOCUMENTATION = """
             - This offers more flexibility than the template module which does not use Jinja2 native types at all.
             - Mutually exclusive with the convert_data option.
         default: False
-        version_added: '2.11'
         type: bool
         env:
             - name: ANSIBLE_JINJA2_NATIVE
@@ -113,8 +111,8 @@ class LookupModule(LookupBase):
 
         self.set_options(direct=kwargs)
 
-        self.process_scope = self.get_option('process_scope')
-        self.process_results = self.get_option('process_results')
+        process_scope = self.get_option('process_scope')
+        process_results = self.get_option('process_results')
 
         enable_jinja = kwargs.pop('enable_jinja', self.get_option('enable_jinja'))
         jinja2_native = kwargs.pop('jinja2_native', self.get_option('jinja2_native'))
@@ -140,9 +138,9 @@ class LookupModule(LookupBase):
         kheops = AnsibleKheops(configs=configs, display=self._display)
 
         # Create scope
-        if self.process_scope == 'vars':
+        if process_scope == 'vars':
             scope = kheops.get_scope_from_host_inventory(variables, scope=None)
-        elif self.process_scope == 'jinja':
+        elif process_scope == 'jinja':
             scope = kheops.get_scope_from_jinja(variables, self._templar, scope=None)
 
         # Transform dict to list for lookup/queries
@@ -164,7 +162,8 @@ class LookupModule(LookupBase):
                 # not to be processed by literal_eval anywhere in Ansible
                 result = NativeJinjaText(result)
 
-            ret.append(result)
+            # Return result
+            subkey = list(result.keys())[0]
+            ret.append(result[subkey])
 
         return ret
-
