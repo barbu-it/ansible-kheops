@@ -237,7 +237,7 @@ class AnsibleKheops():
         # Instanciate Kheops
         if config["mode"] == 'instance':
 
-            # Confiogure logging
+            # Configure logging
             logger = logging.getLogger('kheops')
             logger.setLevel(config["instance_log_level"])
 
@@ -263,24 +263,26 @@ class AnsibleKheops():
 
 
     def get_config(self):
-        items = [
-        # We exclude 'config'
-        'mode', 
-        'instance_config', 'instance_namespace', 'instance_log_level',
-        'namespace', 'scope', 'keys']
-
+        """
+        Processing order:
+        - Fetch the value of config or fallback on ANSIBLE_KHEOPS_CONFIG
+        - Load the config if any
+        - Overrides with other options
+        """
         
         # Extract default value from doc
         data_doc = yaml.safe_load(DOCUMENTATION_OPTION_FRAGMENT)
         default_config = {key: value.get("default", None) for key, value in data_doc.items()}
 
 
+        #print ("Show configs")
+        #pprint (self.configs)
         merged_configs = {}
         for config in self.configs:
 
             conf_data = None
             if isinstance(config, str):
-                #print ("Read file", config)
+                self.display.vv("Read Kheops file config", config)
                 if os.path.isfile(config):
                     data = open(config, "r")
                     conf_data = yaml.safe_load(data)
@@ -288,7 +290,7 @@ class AnsibleKheops():
                     raise AnsibleError("Unable to find configuration file %s" % config_file)
 
             elif isinstance(config, dict):
-                #print ("Read Config", config)
+                self.display.vv ("Read Kheops direct config", config)
                 conf_data = config
             else:
                 assert False, f"Bad config for: {config}"
@@ -299,6 +301,11 @@ class AnsibleKheops():
 
 
         # Get environment config
+        items = [
+        # We exclude 'config'
+        'mode', 
+        'instance_config', 'instance_namespace', 'instance_log_level',
+        'namespace', 'scope', 'keys']
         env_config = {}
         for item in items:
             envvar = "ANSIBLE_KHEOPS_" + item.upper()
@@ -467,6 +474,14 @@ class AnsibleKheops():
             scope = self.get_scope_from_jinja(_variables, _templar, scope=scope)
         
         ret = self.lookup(keys, namespace=namespace, scope=scope)
+
+        if _process_results == 'jinja':
+            with _templar.set_temporary_context(available_variables=_variables):
+                ret = _templar.template(ret,
+                        preserve_trailing_newlines=True,
+                        convert_data=False, escape_backslashes=False)
+            if USE_JINJA2_NATIVE and not jinja2_native:
+                ret = NativeJinjaText(ret)
 
         return ret
 

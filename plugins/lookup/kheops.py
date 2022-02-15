@@ -96,13 +96,6 @@ class LookupModule(LookupBase):
         jinja2_native = kwargs.pop('jinja2_native', self.get_option('jinja2_native'))
 
 
-        # Start jinja template engine
-        if process_scope == 'jinja' or process_results == 'jinja':
-            if USE_JINJA2_NATIVE and not jinja2_native:
-                templar = self._templar.copy_with_new_env(environment_class=AnsibleEnvironment)
-            else:
-                templar = self._templar
-
 
         # Prepare Kheops instance
         self.config_file = self.get_option('config')
@@ -115,6 +108,13 @@ class LookupModule(LookupBase):
           ]
         kheops = AnsibleKheops(configs=configs, display=self._display)
 
+
+        # Start jinja template engine
+        if USE_JINJA2_NATIVE and not jinja2_native:
+            templar = self._templar.copy_with_new_env(environment_class=AnsibleEnvironment)
+        else:
+            templar = self._templar
+
         # Create scope
         if process_scope == 'vars':
             scope = kheops.get_scope_from_host_inventory(variables, scope=None)
@@ -124,22 +124,24 @@ class LookupModule(LookupBase):
         # Transform dict to list for lookup/queries
         ret = []
         for term in terms:
-            result = kheops.lookup(
+            result = kheops.super_lookup(
                   keys=term,
                   scope=scope,
+                  _variables=variables,
+                  _templar=templar,
               )
 
             # Render data with Templar
-            if process_results == 'jinja':
-                with templar.set_temporary_context(available_variables=variables):
-                    result = templar.template(result,
-                                preserve_trailing_newlines=True,
-                                convert_data=False, escape_backslashes=False)
+            #if process_results == 'jinja':
+            #    with templar.set_temporary_context(available_variables=variables):
+            #        result = templar.template(result,
+            #                    preserve_trailing_newlines=True,
+            #                    convert_data=False, escape_backslashes=False)
 
-                if USE_JINJA2_NATIVE and not jinja2_native:
-                    # jinja2_native is true globally but off for the lookup, we need this text
-                    # not to be processed by literal_eval anywhere in Ansible
-                    result = NativeJinjaText(result)
+            #    if USE_JINJA2_NATIVE and not jinja2_native:
+            #        # jinja2_native is true globally but off for the lookup, we need this text
+            #        # not to be processed by literal_eval anywhere in Ansible
+            #        result = NativeJinjaText(result)
 
             # Return result
             subkey = list(result.keys())[0]
