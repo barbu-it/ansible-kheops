@@ -51,26 +51,6 @@ DOCUMENTATION = """
         description: One or more string terms prefixed by a namespace. Format is `<namespace>/<key>`.
         required: True
 
-      enable_jinja:
-        description:
-            - Enable or not Jinja rendering
-        default: True
-        type: bool
-      jinja2_native:
-        description:
-            - Controls whether to use Jinja2 native types.
-            - It is off by default even if global jinja2_native is True.
-            - Has no effect if global jinja2_native is False.
-            - This offers more flexibility than the template module which does not use Jinja2 native types at all.
-            - Mutually exclusive with the convert_data option.
-        default: False
-        type: bool
-        env:
-            - name: ANSIBLE_JINJA2_NATIVE
-        notes:
-          - Kheops documentation is available on http://kheops.io/
-          - You can add more parameters as documented in http://kheops.io/server/api
-
 """ + DOCUMENTATION_OPTION_FRAGMENT
 
 EXAMPLES = """
@@ -113,13 +93,11 @@ class LookupModule(LookupBase):
 
         process_scope = self.get_option('process_scope')
         process_results = self.get_option('process_results')
-
-        enable_jinja = kwargs.pop('enable_jinja', self.get_option('enable_jinja'))
         jinja2_native = kwargs.pop('jinja2_native', self.get_option('jinja2_native'))
 
 
         # Start jinja template engine
-        if enable_jinja:
+        if process_scope == 'jinja' or process_results == 'jinja':
             if USE_JINJA2_NATIVE and not jinja2_native:
                 templar = self._templar.copy_with_new_env(environment_class=AnsibleEnvironment)
             else:
@@ -152,15 +130,16 @@ class LookupModule(LookupBase):
               )
 
             # Render data with Templar
-            with templar.set_temporary_context(available_variables=variables):
-                result = templar.template(result,
-                            preserve_trailing_newlines=True,
-                            convert_data=False, escape_backslashes=False)
+            if process_results == 'jinja':
+                with templar.set_temporary_context(available_variables=variables):
+                    result = templar.template(result,
+                                preserve_trailing_newlines=True,
+                                convert_data=False, escape_backslashes=False)
 
-            if USE_JINJA2_NATIVE and not jinja2_native:
-                # jinja2_native is true globally but off for the lookup, we need this text
-                # not to be processed by literal_eval anywhere in Ansible
-                result = NativeJinjaText(result)
+                if USE_JINJA2_NATIVE and not jinja2_native:
+                    # jinja2_native is true globally but off for the lookup, we need this text
+                    # not to be processed by literal_eval anywhere in Ansible
+                    result = NativeJinjaText(result)
 
             # Return result
             subkey = list(result.keys())[0]

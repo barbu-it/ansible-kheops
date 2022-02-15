@@ -142,7 +142,22 @@ DOCUMENTATION_OPTION_FRAGMENT = '''
           - Using jinja may pose some security issues, as you need to be sure that your source of data is properly secured.
         default: 'none'
         choices: ['none', 'jinja']
-      
+
+      jinja2_native:
+        description:
+            - Controls whether to use Jinja2 native types.
+            - It is off by default even if global jinja2_native is True.
+            - Has no effect if global jinja2_native is False.
+            - This offers more flexibility than the template module which does not use Jinja2 native types at all.
+            - Mutually exclusive with the convert_data option.
+        default: False
+        type: bool
+        env:
+            - name: ANSIBLE_JINJA2_NATIVE
+        notes:
+          - Kheops documentation is available on http://kheops.io/
+          - You can add more parameters as documented in http://kheops.io/server/api
+
       
       # Uneeded # Misc
       # Uneeded version:
