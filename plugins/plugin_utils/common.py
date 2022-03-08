@@ -462,6 +462,7 @@ class AnsibleKheops():
             _variables=None,
             _process_scope=None,
             _process_results=None,
+            jinja2_native=False
             ):
 
         _process_scope = _process_scope or self.config['process_scope']
@@ -471,7 +472,7 @@ class AnsibleKheops():
             scope = self.get_scope_from_host_inventory(_variables, scope=scope)
         elif _process_scope == 'jinja':
             assert _templar, f"BUG: We expected a templar object here, got: {_templar}"
-            scope = self.get_scope_from_jinja(_variables, _templar, scope=scope)
+            scope = self.get_scope_from_jinja(_variables, _templar, scope=scope, jinja2_native=jinja2_native)
         
         ret = self.lookup(keys, namespace=namespace, scope=scope)
 

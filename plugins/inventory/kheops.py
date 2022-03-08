@@ -86,6 +86,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable, Constructable):
         #self._consume_options(config_data)
 
         # Get options from inventory
+        self.jinja2_native = self.get_option('jinja2_native')
         self.strict = self.get_option('strict')
         self.compose = self.get_option('compose')
         self.groups = self.get_option('groups')
@@ -111,6 +112,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable, Constructable):
               scope=None,
               _templar=self.templar,
               _variables=host.get_vars(),
+              jinja2_native=self.jinja2_native,
               #trace=True,
               #explain=True,
           )
