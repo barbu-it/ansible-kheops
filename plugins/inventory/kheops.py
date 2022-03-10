@@ -6,17 +6,11 @@
 # pylint: disable=super-with-arguments
 
 from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type
-
-import sys
-import os
-import logging
+# __metaclass__ = type
 
 from ansible import constants as C
 from ansible.errors import AnsibleError
 from ansible.plugins.inventory import BaseInventoryPlugin, Cacheable, Constructable
-
-#sys.path.append("/home/jez/prj/bell/training/tiger-ansible/ext/kheops")
 from ansible_collections.barbu_it.ansible_kheops.plugins.plugin_utils.common import DOCUMENTATION_OPTION_FRAGMENT, AnsibleKheops
 
 DOCUMENTATION = '''
@@ -65,7 +59,6 @@ query_scope:
   environment: foreman_environment_name
 '''
 
-from pprint import pprint
 
 
 class InventoryModule(BaseInventoryPlugin, Cacheable, Constructable):
@@ -78,6 +71,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable, Constructable):
                 valid = True
         return valid
 
+
     def parse(self, inventory, loader, path, cache):
         '''Return dynamic inventory from source '''
 
@@ -89,57 +83,49 @@ class InventoryModule(BaseInventoryPlugin, Cacheable, Constructable):
         self.jinja2_native = self.get_option('jinja2_native')
         self.strict = self.get_option('strict')
         self.compose = self.get_option('compose')
+
         self.groups = self.get_option('groups')
         self.keyed_groups = self.get_option('keyed_groups')
 
         # self.process_scope = self.get_option('process_scope')
         # self.process_results = self.get_option('process_results')
-        
+
         # Prepare Kheops instance
         self.config_file = self.get_option('config')
+        ansible_config = {
+                "instance_namespace": self.get_option('instance_namespace'),
+                "instance_log_level": self.get_option('instance_log_level'),
+                "instance_explain": self.get_option('instance_explain'),
+                }
         configs = [
-          self.config_file,
-          path,
-          ]
+            ansible_config,
+            self.config_file,
+            path,
+            ]
         kheops = AnsibleKheops(configs=configs, display=self.display)
 
         # Loop over each hosts
         for host_name in inventory.hosts:
-          host = self.inventory.get_host(host_name)
+            host = self.inventory.get_host(host_name)
 
-          ret = kheops.super_lookup(
-              keys=None,
-              scope=None,
-              _templar=self.templar,
-              _variables=host.get_vars(),
-              jinja2_native=self.jinja2_native,
-              #trace=True,
-              #explain=True,
-          )
+            ret = kheops.super_lookup(
+                keys=None,
+                scope=None,
+                _templar=self.templar,
+                _variables=host.get_vars(),
+                jinja2_native=self.jinja2_native,
+                #trace=True,
+                #explain=True,
+            )
 
-          # # Create the scope
-          # if self.process_scope == 'vars':
-          #     scope = kheops.get_scope_from_host_inventory(host.get_vars(), scope=None)
-          # elif self.process_scope == 'jinja':
-          #     scope = kheops.get_scope_from_jinja(host.get_vars(), self.templar, scope=None)
-
-          # # Fetch the results
-          # ret = kheops.lookup(
-          #     keys=None,
-          #     scope=scope,
-          #     #trace=True,
-          #     #explain=True,
-          # )
-
-          # Inject variables into host
-          for key, value in ret.items():
-
+            # Inject variables into host
+            for key, value in ret.items():
                 self.display.vv (f"Define variable for {host_name}: {key}={value}")
                 host.set_variable(key, value)
 
-          # Call constructed inventory plugin methods
-          hostvars = host.get_vars()
-          self._set_composite_vars(self.compose, hostvars, host_name, self.strict)
-          self._add_host_to_composed_groups(self.groups, hostvars, host_name, self.strict)
-          self._add_host_to_keyed_groups(self.keyed_groups, hostvars, host_name, self.strict)
+            # Call constructed inventory plugin methods
+            hostvars = self.inventory.get_host(host_name).get_vars()
+            self._set_composite_vars(self.compose, hostvars, host_name, self.strict)
+            self._add_host_to_composed_groups(self.groups, hostvars, host_name, self.strict)
+            self._add_host_to_keyed_groups(self.keyed_groups, hostvars, host_name, self.strict)
 

@@ -1,9 +1,25 @@
 # -*- coding: utf-8 -*-
 
+import os
+import logging
+from dataclasses import dataclass
+from typing import Any, Union
+from copy import deepcopy
+import yaml
+
+from ansible.errors import AnsibleError, AnsibleUndefinedVariable
+from ansible.module_utils.common.text.converters import to_native
+from ansible.utils.display import Display
+from ansible.template import (
+    generate_ansible_template_vars,
+    AnsibleEnvironment,
+    USE_JINJA2_NATIVE,
+)
+
+from kheops.app import Kheops
 
 
-
-DOCUMENTATION_OPTION_FRAGMENT = '''
+DOCUMENTATION_OPTION_FRAGMENT = """
 
       # Plugin configuration
       # ==========================
@@ -14,9 +30,12 @@ DOCUMENTATION_OPTION_FRAGMENT = '''
           - All settings of the target files can be overriden from this file
           - Ignored if blank or Null
         default: Null
+        ini:
+            - section: inventory
+              key: kheops_config
         env:
             - name: ANSIBLE_KHEOPS_CONFIG
-      
+
       mode:
         description:
           - Choose `client` to use a remote Khéops instance
@@ -25,46 +44,57 @@ DOCUMENTATION_OPTION_FRAGMENT = '''
         choices: ['instance', 'client']
         env:
             - name: ANSIBLE_KHEOPS_MODE
-      
+
       # default_namespace:
       #   description:
       #     - The Kheops namespace to use
       #   default: 'default'
       #   env:
       #       - name: ANSIBLE_KHEOPS_DEFAULT_NAMESPACE
-      
+
       # default_scope:
       #   description:
       #     - A list of default variables to inject in scope.
       #   default: 'default'
       #   env:
       #       - name: ANSIBLE_KHEOPS_DEFAULT_SCOPE
-      
-      
+
+
       # Instance configuration (Direct)
       # ==========================
       # Instance configuration
       instance_config:
         description:
           - The Kheops configuration file to use.
+          - Require mode=instance
         default: 'site/kheops.yml'
         env:
             - name: ANSIBLE_KHEOPS_INSTANCE_CONFIG
       instance_namespace:
         description:
           - The Kheops configuration file to use.
+          - Require mode=instance
         default: 'default'
         env:
             - name: ANSIBLE_KHEOPS_INSTANCE_NAMESPACE
       instance_log_level:
         description:
           - Khéops logging level
+          - Require mode=instance
         choices: ['DEBUG', 'INFO', 'WARNING', 'ERROR']
         default: 'WARNING'
         env:
-            - name: ANSIBLE_KHEOPS_LOG_LEVEL
-      
-      
+            - name: ANSIBLE_KHEOPS_INSTANCE_LOG_LEVEL
+      instance_explain:
+        description:
+          - Khéops logging explain
+          - Require mode=instance
+        type: boolean
+        default: False
+        env:
+            - name: ANSIBLE_KHEOPS_INSTANCE_EXPLAIN
+
+
       # Instance configuration (Client)
       # ==========================
       # turfu # Client configuration
@@ -100,8 +130,8 @@ DOCUMENTATION_OPTION_FRAGMENT = '''
       # turfu   default: False
       # turfu   env:
       # turfu       - name: ANSIBLE_KHEOPS_VALIDATE_CERTS
-      
-      
+
+
       # Query configuration
       # ==========================
       namespace:
@@ -117,12 +147,12 @@ DOCUMENTATION_OPTION_FRAGMENT = '''
         default:
           node: inventory_hostname
           groups: group_names
-      
+
       keys:
         description:
           - A list of keys to lookup
         default: Null
-      
+
 
       # Behavior configuration
       # ==========================
@@ -158,51 +188,10 @@ DOCUMENTATION_OPTION_FRAGMENT = '''
           - Kheops documentation is available on http://kheops.io/
           - You can add more parameters as documented in http://kheops.io/server/api
 
-      
-      # Uneeded # Misc
-      # Uneeded version:
-      # Uneeded   description:
-      # Uneeded     - Kheops API version to use.
-      # Uneeded   default: 1
-      # Uneeded   choices: [1]
-      # Uneeded   env:
-      # Uneeded       - name: ANSIBLE_KHEOPS_VERSION
-      # Uneeded cache:
-      # Uneeded   description:
-      # Uneeded     - Enable Kheops inventory cache.
-      # Uneeded   default: false
-      # Uneeded   type: boolean
-      # Uneeded   env:
-      # Uneeded       - name: ANSIBLE_KHEOPS_CACHE
-      # Uneeded policy:
-      # Uneeded   description:
-      # Uneeded     - Kheops policy to use for the lookups.
-      # Uneeded   default: 'default'
-      
-'''
+"""
 
-import os
-import sys
-import yaml
-import logging
-from dataclasses import dataclass
-from typing import Any, Union
 
-from copy import deepcopy
-
-# Devel mode
-sys.path.append("/home/jez/prj/bell/training/tiger-ansible/ext/kheops")
-
-from kheops.app import Kheops
-
-from ansible.errors import AnsibleError
-from ansible.module_utils.common.text.converters import to_native
-from ansible.template import generate_ansible_template_vars, AnsibleEnvironment, USE_JINJA2_NATIVE
-from ansible.utils.display import Display
-
-from pprint import pprint
-
-KEY_NS_SEP = ':'
+KEY_NS_SEP = "/"
 if USE_JINJA2_NATIVE:
     from ansible.utils.native_jinja import NativeJinjaText
 
@@ -220,8 +209,8 @@ class Key:
         return ret
 
 
-class AnsibleKheops():
-
+class AnsibleKheops:
+    """Main Ansible Kheops Class"""
 
     def __init__(self, configs=None, display=None):
 
@@ -229,16 +218,12 @@ class AnsibleKheops():
         self.display = display or Display()
 
         config = self.get_config()
-        # print ("CURRENT CONFIG vv")
-        # pprint (config)
-        # print ("CURRENT CONFIG ^^")
-
 
         # Instanciate Kheops
-        if config["mode"] == 'instance':
+        if config["mode"] == "instance":
 
             # Configure logging
-            logger = logging.getLogger('kheops')
+            logger = logging.getLogger("kheops")
             logger.setLevel(config["instance_log_level"])
 
             # See for logging: https://medium.com/opsops/debugging-requests-1989797736cc
@@ -252,15 +237,13 @@ class AnsibleKheops():
 
             # Start instance
             self.kheops = Kheops(
-                config=config['instance_config'], 
-                namespace=config['instance_namespace']
-                )
-        elif config["mode"] == 'client':
+                config=config["instance_config"], namespace=config["instance_namespace"]
+            )
+        elif config["mode"] == "client":
             raise AnsibleError("Kheops client mode is not implemented")
 
         self.config = config
-        self.display.v(f"Kheops instance has been created")
-
+        self.display.v("Kheops instance has been created")
 
     def get_config(self):
         """
@@ -269,14 +252,13 @@ class AnsibleKheops():
         - Load the config if any
         - Overrides with other options
         """
-        
+
         # Extract default value from doc
         data_doc = yaml.safe_load(DOCUMENTATION_OPTION_FRAGMENT)
-        default_config = {key: value.get("default", None) for key, value in data_doc.items()}
+        default_config = {
+            key: value.get("default", None) for key, value in data_doc.items()
+        }
 
-
-        #print ("Show configs")
-        #pprint (self.configs)
         merged_configs = {}
         for config in self.configs:
 
@@ -284,34 +266,40 @@ class AnsibleKheops():
             if isinstance(config, str):
                 self.display.vv("Read Kheops file config", config)
                 if os.path.isfile(config):
-                    data = open(config, "r")
+                    data = open(config, "r", encoding="utf-8")
                     conf_data = yaml.safe_load(data)
                 else:
-                    raise AnsibleError("Unable to find configuration file %s" % config_file)
+                    raise AnsibleError(f"Unable to find configuration file {config}")
 
             elif isinstance(config, dict):
-                self.display.vv ("Read Kheops direct config", config)
+                self.display.vv("Read Kheops direct config", config)
                 conf_data = config
+            elif isinstance(config, type(None)):
+                continue
             else:
                 assert False, f"Bad config for: {config}"
 
-            assert isinstance(conf_data, dict), f"Bug with conf_data: {config_data}"
+            assert isinstance(conf_data, dict), f"Bug with conf_data: {conf_data}"
             if isinstance(conf_data, dict):
                 merged_configs.update(conf_data)
 
-
         # Get environment config
         items = [
-        # We exclude 'config'
-        'mode', 
-        'instance_config', 'instance_namespace', 'instance_log_level',
-        'namespace', 'scope', 'keys']
+            # We exclude 'config'
+            "mode",
+            "instance_config",
+            "instance_namespace",
+            "instance_log_level",
+            "namespace",
+            "scope",
+            "keys",
+        ]
         env_config = {}
         for item in items:
             envvar = "ANSIBLE_KHEOPS_" + item.upper()
             try:
                 env_config[item] = os.environ[envvar]
-            except KeyError as err:
+            except KeyError:
                 pass
 
         # Merge results
@@ -319,22 +307,8 @@ class AnsibleKheops():
         combined_config.update(default_config)
         combined_config.update(env_config)
         combined_config.update(merged_configs)
-        
-        # Debug report
-        # out = {
-        #     "0_default": default_config,
-        #     "1_env": env_config,
-        #     "2_common": merged_configs,
-        # }
-        # print ('=' * 20)
-        # pprint (out)
-        # print ('=' * 20)
-        # pprint (combined_config)
-        # print ('=' * 20)
 
         return combined_config
-
-
 
     @staticmethod
     def parse_string(item, default_namespace):
@@ -354,20 +328,15 @@ class AnsibleKheops():
                 remap = parts[2]
 
         elif isinstance(item, dict):
-            key = item.get('key')
-            remap = item.get('remap', key)
-            namespace = item.get('namespace', namespace)
+            key = item.get("key")
+            remap = item.get("remap", key)
+            namespace = item.get("namespace", namespace)
 
-        return Key(key=key, 
-            remap=remap, 
-            namespace=namespace)
-
+        return Key(key=key, remap=remap, namespace=namespace)
 
     @classmethod
     def parse_keys(self, data, namespace):
-
         keys = []
-
         if isinstance(data, str):
             keys.append(self.parse_string(data, namespace))
 
@@ -384,13 +353,15 @@ class AnsibleKheops():
                 keys.append(self.parse_string(item, namespace))
 
         else:
-            raise AnsibleError("Unable to process Kheops keys: %s" % keys)
+            raise AnsibleError(f"Unable to process Kheops keys: {keys}")
 
         return keys
 
-
     def get_scope_from_host_inventory(self, host_vars, scope=None):
-        scope = scope or self.config['scope']
+        """
+        Build scope from host vars
+        """
+        scope = scope or self.config["scope"]
         ret = {}
         for key, val in scope.items():
             # Tofix should this fail silently ?
@@ -398,9 +369,11 @@ class AnsibleKheops():
 
         return ret
 
-
     def get_scope_from_jinja(self, host_vars, templar, scope=None, jinja2_native=False):
-        scope = scope or self.config['scope']
+        """
+        Parse in jinja a dict scope
+        """
+        scope = scope or self.config["scope"]
 
         if USE_JINJA2_NATIVE and not jinja2_native:
             _templar = templar.copy_with_new_env(environment_class=AnsibleEnvironment)
@@ -414,39 +387,51 @@ class AnsibleKheops():
             for key, value in scope.items():
                 res = value
                 try:
-                    res = _templar.template(value, preserve_trailing_newlines=True,
-                            convert_data=True, escape_backslashes=False)
+                    res = _templar.template(
+                        value,
+                        preserve_trailing_newlines=True,
+                        convert_data=True,
+                        escape_backslashes=False,
+                    )
                     if USE_JINJA2_NATIVE and not jinja2_native:
-                         # jinja2_native is true globally but off for the lookup, we need this text
-                         # not to be processed by literal_eval anywhere in Ansible
-                         res = NativeJinjaText(res)
-                    self.display.vvv(f"Transformed: {value} =====> {res}")
-                except Exception as err:
-                    self.display.v(f"Got templating error for value: {value} => {err}")
+                        # jinja2_native is true globally but off for the lookup, we need this text
+                        # not to be processed by literal_eval anywhere in Ansible
+                        res = NativeJinjaText(res)
+                    self.display.vvv(f"Transformed scope value: {value} => {res}")
+                except AnsibleUndefinedVariable as err:
+                    self.display.error(f"Got templating error for string '{value}': {err}")
+                    raise Exception() from err
 
                 ret[key] = res
 
         return ret
 
+    def lookup(self, keys, namespace=None, scope=None, explain=None):
+        """
+        Start a lookup query
+        """
 
+        if explain is None:
+            explain = self.config["instance_explain"]
 
-    def lookup(self, keys, namespace=None, scope=None, kwargs=None):
-
-        namespace = namespace or self.config['namespace']
-        scope = scope or self.config['scope']
-        keys = keys or self.config['keys']
+        namespace = namespace or self.config["namespace"]
+        scope = scope or self.config["scope"]
+        keys = keys or self.config["keys"]
         keys_config = self.parse_keys(keys, namespace)
-        keys = [ i.show() for i in keys_config ]
+        keys = [i.show() for i in keys_config]
 
         self.display.v(f"Kheops keys: {keys}")
         self.display.vv(f"Kheops scope: {scope}")
 
+        # try:
         ret = self.kheops.lookup(
-                keys=keys,
-                scope=scope,
-                #trace=True,
-                #explain=True,
-            )
+            keys=keys,
+            scope=scope,
+            # trace=True,
+            explain=explain,
+        )
+        # except Exception as err:
+        #    raise AnsibleError(err)
 
         # Remap output
         for key in keys_config:
@@ -456,34 +441,45 @@ class AnsibleKheops():
 
         return ret or {}
 
+    def super_lookup(
+        self,
+        keys,
+        namespace=None,
+        scope=None,
+        kwargs=None,
+        _templar=None,
+        _variables=None,
+        _process_scope=None,
+        _process_results=None,
+        jinja2_native=False,
+    ):
+        """
+        Lookup method wrapper
+        """
 
-    def super_lookup(self, keys, namespace=None, scope=None, kwargs=None,
-            _templar=None,
-            _variables=None,
-            _process_scope=None,
-            _process_results=None,
-            jinja2_native=False
-            ):
+        _process_scope = _process_scope or self.config["process_scope"]
+        _process_results = _process_results or self.config["process_results"]
 
-        _process_scope = _process_scope or self.config['process_scope']
-        _process_results = _process_results or self.config['process_results']
-
-        if _process_scope == 'vars':
+        scope = scope or self.config["scope"]
+        if _process_scope == "vars":
             scope = self.get_scope_from_host_inventory(_variables, scope=scope)
-        elif _process_scope == 'jinja':
+        elif _process_scope == "jinja":
             assert _templar, f"BUG: We expected a templar object here, got: {_templar}"
-            scope = self.get_scope_from_jinja(_variables, _templar, scope=scope, jinja2_native=jinja2_native)
-        
+            scope = self.get_scope_from_jinja(
+                _variables, _templar, scope=scope, jinja2_native=jinja2_native
+            )
+
         ret = self.lookup(keys, namespace=namespace, scope=scope)
 
-        if _process_results == 'jinja':
+        if _process_results == "jinja":
             with _templar.set_temporary_context(available_variables=_variables):
-                ret = _templar.template(ret,
-                        preserve_trailing_newlines=True,
-                        convert_data=False, escape_backslashes=False)
+                ret = _templar.template(
+                    ret,
+                    preserve_trailing_newlines=True,
+                    convert_data=False,
+                    escape_backslashes=False,
+                )
             if USE_JINJA2_NATIVE and not jinja2_native:
                 ret = NativeJinjaText(ret)
 
         return ret
-
-
