@@ -264,7 +264,7 @@ class AnsibleKheops:
 
             conf_data = None
             if isinstance(config, str):
-                self.display.vv("Read Kheops file config", config)
+                self.display.vv("Read Kheops file config %s" % config)
                 if os.path.isfile(config):
                     data = open(config, "r", encoding="utf-8")
                     conf_data = yaml.safe_load(data)
@@ -272,7 +272,7 @@ class AnsibleKheops:
                     raise AnsibleError(f"Unable to find configuration file {config}")
 
             elif isinstance(config, dict):
-                self.display.vv("Read Kheops direct config", config)
+                self.display.vv("Read Kheops direct config %s" % config)
                 conf_data = config
             elif isinstance(config, type(None)):
                 continue
@@ -400,7 +400,7 @@ class AnsibleKheops:
                     self.display.vvv(f"Transformed scope value: {value} => {res}")
                 except AnsibleUndefinedVariable as err:
                     self.display.error(f"Got templating error for string '{value}': {err}")
-                    raise Exception() from err
+                    raise err
 
                 ret[key] = res
 
@@ -423,15 +423,13 @@ class AnsibleKheops:
         self.display.v(f"Kheops keys: {keys}")
         self.display.vv(f"Kheops scope: {scope}")
 
-        # try:
         ret = self.kheops.lookup(
             keys=keys,
             scope=scope,
             # trace=True,
             explain=explain,
+            namespace_prefix=False
         )
-        # except Exception as err:
-        #    raise AnsibleError(err)
 
         # Remap output
         for key in keys_config:
