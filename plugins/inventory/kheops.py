@@ -83,7 +83,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable, Constructable):
 
         super(InventoryModule, self).parse(inventory, loader, path, cache)
         config_data = self._read_config_data(path)
-        #self._consume_options(config_data)
+        self._consume_options(config_data)
 
         # Get options from inventory
         self.jinja2_native = self.get_option('jinja2_native')
