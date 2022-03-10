@@ -243,7 +243,7 @@ class AnsibleKheops:
             raise AnsibleError("Kheops client mode is not implemented")
 
         self.config = config
-        self.display.v("Kheops instance has been created")
+        self.display.v("Kheops instance has been created, with config: %s" % config['instance_config'])
 
     def get_config(self):
         """

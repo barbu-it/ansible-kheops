@@ -87,9 +87,6 @@ class InventoryModule(BaseInventoryPlugin, Cacheable, Constructable):
         self.groups = self.get_option('groups')
         self.keyed_groups = self.get_option('keyed_groups')
 
-        # self.process_scope = self.get_option('process_scope')
-        # self.process_results = self.get_option('process_results')
-
         # Prepare Kheops instance
         self.config_file = self.get_option('config')
         ansible_config = {
@@ -102,21 +99,32 @@ class InventoryModule(BaseInventoryPlugin, Cacheable, Constructable):
             self.config_file,
             path,
             ]
-        kheops = AnsibleKheops(configs=configs, display=self.display)
+        self.kheops = AnsibleKheops(configs=configs, display=self.display)
 
         # Loop over each hosts
         for host_name in inventory.hosts:
+            try:
+                self._populate_host(host_name)
+            except Exception as err:
+                self.display.error(f"Got errors while processing Kheops lookup for host: %s, %s" % (host_name, err))
+                raise err
+
+
+    def _populate_host(self, host_name):
+
             host = self.inventory.get_host(host_name)
 
-            ret = kheops.super_lookup(
-                keys=None,
-                scope=None,
-                _templar=self.templar,
-                _variables=host.get_vars(),
-                jinja2_native=self.jinja2_native,
-                #trace=True,
-                #explain=True,
-            )
+            try:
+                ret = self.kheops.super_lookup(
+                    keys=None,
+                    scope=None,
+                    _templar=self.templar,
+                    _variables=host.get_vars(),
+                    jinja2_native=self.jinja2_native,
+                )
+            except AnsibleError as err:
+                self.display.error (f"Could lookup Kheops data for host: {host_name}")
+                raise err
 
             # Inject variables into host
             for key, value in ret.items():
